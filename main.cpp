@@ -17,14 +17,14 @@
 #include "camera.h"
 #include "court.h"
 
-static const int WINDOW_WIDTH  = 1280;
+static const int WINDOW_WIDTH = 1280;
 static const int WINDOW_HEIGHT = 720;
 
 static Camera cam;
-static bool   mouseDown = false;
+static bool mouseDown = false;
 static double lastX = 0.0, lastY = 0.0;
 
-static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) {
             mouseDown = true;
@@ -38,9 +38,10 @@ static void mouse_button_callback(GLFWwindow* window, int button, int action, in
 static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
     if (mouseDown) {
         float xoffset = (float)(xpos - lastX);
-        float yoffset = (float)(lastY - ypos);
+        float yoffset = (float)(lastY - ypos); // reversed since y-coordinates go from bottom to top
         lastX = xpos;
         lastY = ypos;
+
         cam.orbit(xoffset, yoffset);
     }
 }
@@ -63,54 +64,55 @@ static GLFWwindow* initGLFW() {
     glfwWindowHint(GLFW_SAMPLES, 4);
 
     GLFWwindow* window = glfwCreateWindow(
-        WINDOW_WIDTH, WINDOW_HEIGHT,
-        "Basketball 3D Trajectory Visualizer", nullptr, nullptr
+    WINDOW_WIDTH, WINDOW_HEIGHT,
+    "Basketball 3D Trajectory Visualizer", nullptr, nullptr
     );
-    if (!window) {
-        std::cerr << "Window creation failed\n";
-        glfwTerminate();
-        return nullptr;
-    }
 
-    glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
-
-    glfwSetMouseButtonCallback(window, mouse_button_callback);
-    glfwSetCursorPosCallback(window,   cursor_position_callback);
-    glfwSetScrollCallback(window,      scroll_callback);
-
-    return window;
+if (!window) {
+    std::cerr << "GLFW window creation failed\n";
+    glfwTerminate();
+    return nullptr;
 }
 
-struct ShotState {
+glfwMakeContextCurrent(window);
+glfwSwapInterval(1); // Enable vsync
+
+glfwSetMouseButtonCallback(window, mouse_button_callback);
+glfwSetCursorPosCallback(window, cursor_position_callback);
+glfwSetScrollCallback(window, scroll_callback);
+
+return window;
+}
+
+struct shotState {
     float v0    = 8.5f;
     float theta = 52.f;
     float phi   = 0.f;
     float h0    = 1.8f;
 };
 
-static ShotState shot;
-static bool      needRecompute = true;
+static shotState shot;
+static bool needRecompute = true;
 
 static std::vector<TrajectoryPoint> currentTraj;
 static std::vector<TrajectoryPoint> optimalTraj;
-static float                        shotQualityVal = 0.f;
-static float                        optAngle       = 0.f;
+static float shotQualityVal = 0.f;
+static float optAngle = 0.f;
 
-static float animT     = 0.f;
-static bool  animating = false;
-static float animSpeed = 0.5f;
+static float animT = 0.f;
+static bool animating = false;
+static bool animSpeedUp = 0.5f;
 
-static PhysicsConfig phys;
+static Physics physics;
 
-void recompute() {
-    currentTraj    = simulateDrag(shot.v0, shot.theta, shot.phi, shot.h0, phys);
-    optAngle       = findOptimalAngle(shot.v0, shot.h0, Court::DIST_TO_RIM, Court::RIM_HEIGHT, phys);
-    optimalTraj    = simulateDrag(shot.v0, optAngle, 0.f, shot.h0, phys);
+void Recompute() {
+    currentTraj = simulateDrag(shot.v0, shot.theta, shot.phi, shot.h0, phys);
+    optAngle = findOptimalAngle(shot.v0, shot.h0, Court::DIST_TO_RIM, Court::RIM_HEIGHT, phys);
+    optimalTraj = simulateDrag(shot.v0, optAngle, 0.f, shot.h0, phys);
     shotQualityVal = shotQuality(currentTraj, Court::DIST_TO_RIM, Court::RIM_HEIGHT);
-    animT          = 0.f;
-    animating      = true;
-    needRecompute  = false;
+    animT = 0.f;
+    animating = true;
+    needRecompute = false;
 
     std::cout << "\n=== Shot ===\n"
               << "  Launch speed  : " << shot.v0                    << " m/s\n"
@@ -284,3 +286,9 @@ int main() {
     glfwTerminate();
     return 0;
 }
+
+
+
+
+
+
