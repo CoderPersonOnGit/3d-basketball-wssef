@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\shubs.LAPTOP-8O5R55SM\Documents\3d_Basketball_WSSEF\cameramain.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\shubs.LAPTOP-8O5R55SM\Documents\3d_Basketball_WSSEF\vision.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\shubs.LAPTOP-8O5R55SM\Documents\3d_Basketball_WSSEF\physics.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\shubs.LAPTOP-8O5R55SM\Documents\3d_Basketball_WSSEF\shader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\shubs.LAPTOP-8O5R55SM\Documents\3d_Basketball_WSSEF\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{53327E4D-3924-368D-AC44-C7765D2346FC}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

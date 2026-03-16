@@ -13,14 +13,19 @@ static constexpr float COURT_RIM_HEIGHT_M  = 3.05f;
 static constexpr float COURT_RIM_RADIUS_M  = 0.2286f;
 static constexpr float AVG_PERSON_HEIGHT_M = 1.80f;
 
+// Common shot distances (metres)
+static constexpr float DIST_LAYUP_M      = 1.5f;
+static constexpr float DIST_FREE_THROW_M = 4.6f;
+static constexpr float DIST_THREE_PT_M   = 6.75f;
+
 // -----------------------------------------------------------------------
 // Shot outcome
 // -----------------------------------------------------------------------
 enum class ShotResult {
-    None,       // no shot in progress
-    InFlight,   // ball is in the air
-    Made,       // ball passed through rim
-    Missed      // ball hit rim or missed entirely
+    None,
+    InFlight,
+    Made,
+    Missed
 };
 
 // -----------------------------------------------------------------------
@@ -53,15 +58,18 @@ struct SceneData {
     PoseData                 pose;
 
     float       releaseHeightM  = 1.8f;
-    float       distToRimM      = 6.0f;
-    float       launchSpeedMs   = 8.0f;     // NEW: estimated launch speed
-    float       launchAngleDeg  = 52.0f;    // NEW: estimated launch angle
+    float       distToRimM      = 0.0f;
+    float       launchSpeedMs   = 8.0f;
+    float       launchAngleDeg  = 52.0f;
     bool        hasValidShot    = false;
-    bool        shootingRight   = true;     // NEW: direction of shot
+    bool        shootingRight   = true;
 
     ShotResult  shotResult      = ShotResult::None;
     int         madeCount       = 0;
     int         attemptCount    = 0;
+
+    float       shotQuality     = 0.f;
+    float       manualDistM     = 0.f;
 };
 
 // -----------------------------------------------------------------------
@@ -102,12 +110,13 @@ public:
     CameraCalib&     getCalib()           { return calib_; }
 
     void setRimPixel(float x, float y);
+    void setManualDistance(float distM) { scene_.manualDistM = distM; }
 
     // HSV tuning
     cv::Scalar ballLowerHSV { 5,  100, 100 };
     cv::Scalar ballUpperHSV { 25, 255, 255 };
     float      minBallRadius = 8.f;
-    float      maxBallRadius = 80.f;
+    float      maxBallRadius = 35.f;
 
 private:
     cv::VideoCapture cap_;
@@ -116,26 +125,27 @@ private:
     SceneData        scene_;
     CameraCalib      calib_;
 
-    // MediaPipe
     struct MPImpl;
     MPImpl* mp_ = nullptr;
 
-    // Ball trajectory buffer (recent samples for speed estimation + comparison)
+    // Ball trajectory buffer
     std::deque<BallSample>     ballHistory_;
-    static constexpr int       MAX_HISTORY    = 90;   // ~3s at 30fps
-    static constexpr float     HISTORY_WINDOW = 2.0f; // seconds kept
+    static constexpr int       MAX_HISTORY    = 90;
+    static constexpr float     HISTORY_WINDOW = 2.0f;
 
-    // Optimal arc (pixel space) — recomputed when scene changes
+    // Optimal arc cache
     std::vector<glm::vec2>     optimalArcPx_;
     float                      lastOptAngle_  = 0.f;
     float                      lastV0_        = 0.f;
+    float                      lastDistM_     = 0.f;
 
     // Shot state machine
-    bool  ballWasNearRim_   = false;
-    bool  shotInFlight_     = false;
-    float shotStartTime_    = 0.f;
-    float appStartTime_     = 0.f;
+    bool  ballWasNearRim_     = false;
+    bool  shotInFlight_       = false;
+    float shotStartTime_      = 0.f;
+    float appStartTime_       = 0.f;
     float resultDisplayTimer_ = 0.f;
+    float lastShotClearTime_  = -999.f;
 
     // Frame timer
     float prevFrameTime_    = 0.f;
@@ -145,13 +155,16 @@ private:
     std::optional<glm::vec2> detectBall(const cv::Mat& frame);
     PoseData                 detectPose(const cv::Mat& frame);
     void                     computeWorldCoords();
-    void                     estimateLaunchParams();       // NEW
-    void                     detectShotDirection();        // NEW
-    void                     updateShotStateMachine();     // NEW
+    void                     estimateLaunchParams();
+    void                     detectShotDirection();
+    void                     updateShotStateMachine();
+    void                     computeShotQuality();
     void                     drawOverlay();
-    void                     drawTrajectoryComparison();   // NEW
-    void                     drawShotResult();             // NEW
-    void                     drawStats();                  // NEW
+    void                     drawTrajectoryComparison();
+    void                     drawShotResult();
+    void                     drawStats();
+    void                     drawAngleGauge();
+    void                     drawShotQuality();
     void                     projectAndDrawArc();
 
     std::vector<glm::vec2>   projectArcToPixels(
@@ -161,4 +174,3 @@ private:
     bool                     ballNearRim() const;
     bool                     ballPassedThroughRim() const;
 };
-

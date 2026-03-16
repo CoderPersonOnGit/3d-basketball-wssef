@@ -7,6 +7,7 @@
 #include <cmath>
 #include <numeric>
 #include <algorithm>
+#include <fstream>
 
 #ifndef NO_MEDIAPIPE
 #include "mediapipe/framework/calculator_framework.h"
@@ -127,7 +128,7 @@ bool VisionSystem::processFrame() {
     scene_.ballCenter = detectBall(rawFrame_);
     scene_.pose       = detectPose(rawFrame_);
 
-    if (scene_.pose.valid)  computeWorldCoords();
+    if (scene_.pose.valid) computeWorldCoords();
     detectShotDirection();
 
     // Update ball history
@@ -141,12 +142,57 @@ bool VisionSystem::processFrame() {
     }
 
     estimateLaunchParams();
+
+    // Log shot data to CSV - once per shot only
+    static float lastLogTime_ = -999.f;
+    if (calib_.isCalibrated() && scene_.hasValidShot &&
+        scene_.launchSpeedMs > 4.5f &&
+        nowSec() - lastLogTime_ > 3.0f &&
+        scene_.ballCenter &&
+        scene_.ballCenter->y < calib_.frameH * 0.4f) {
+
+        static std::ofstream csvFile("shot_data.csv", std::ios::app);
+        static bool headerWritten = false;
+        if (!headerWritten) {
+            csvFile << "Shot,Speed(m/s),Angle(deg),OptimalAngle(deg),Deviation(deg),Quality,Dist(m),ReleaseHt(m)\n";
+            headerWritten = true;
+        }
+        static int shotNum = 1;
+        float deviation = scene_.launchAngleDeg - lastOptAngle_;
+        csvFile << shotNum++ << ","
+                << scene_.launchSpeedMs << ","
+                << scene_.launchAngleDeg << ","
+                << lastOptAngle_ << ","
+                << deviation << ","
+                << scene_.shotQuality << ","
+                << scene_.distToRimM << ","
+                << scene_.releaseHeightM << "\n";
+        lastLogTime_ = nowSec();
+    }
+
     updateShotStateMachine();
 
+    // --- FALLBACK DEFAULTS when MediaPipe is unavailable ---
+    if (!scene_.pose.valid && calib_.isCalibrated()) {
+        if (scene_.manualDistM > 0.f) {
+            scene_.distToRimM = scene_.manualDistM;
+        } else if (scene_.distToRimM < 0.5f) {
+            scene_.distToRimM = DIST_FREE_THROW_M;
+        }
+        if (scene_.releaseHeightM < 0.5f) scene_.releaseHeightM = 1.8f;
+        if (scene_.launchSpeedMs  < 0.5f) scene_.launchSpeedMs  = 7.5f;
+        scene_.hasValidShot = true;
+        if (scene_.ballCenter)
+            scene_.shootingRight = (scene_.ballCenter->x < calib_.rimXpx);
+    }
+
+    // Apply manual distance override
+    if (scene_.manualDistM > 0.f)
+        scene_.distToRimM = scene_.manualDistM;
+
     if (calib_.isCalibrated()) {
-        // Recompute optimal arc if params changed meaningfully
-        if (std::abs(scene_.launchSpeedMs - lastV0_) > 0.2f ||
-            std::abs(scene_.distToRimM * 10 - lastOptAngle_ * 10) > 1.f) {
+        if (std::abs(scene_.launchSpeedMs - lastV0_)    > 0.2f ||
+            std::abs(scene_.distToRimM    - lastDistM_) > 0.2f) {
             PhysicsConfig phys;
             float opt = findOptimalAngle(scene_.launchSpeedMs,
                                          scene_.releaseHeightM,
@@ -158,20 +204,41 @@ bool VisionSystem::processFrame() {
                 scene_.shootingRight);
             lastOptAngle_ = opt;
             lastV0_       = scene_.launchSpeedMs;
+            lastDistM_    = scene_.distToRimM;
         }
     }
+
+    computeShotQuality();
 
     drawOverlay();
     if (calib_.isCalibrated()) projectAndDrawArc();
     drawTrajectoryComparison();
-    drawShotResult();
+    // drawShotResult(); // disabled - unreliable without MediaPipe
     drawStats();
+    drawAngleGauge();
+    drawShotQuality();
 
     return true;
 }
 
 // -----------------------------------------------------------------------
-// Ball detection
+// Shot quality score (0-100)
+// -----------------------------------------------------------------------
+
+void VisionSystem::computeShotQuality() {
+    if (!calib_.isCalibrated() || lastOptAngle_ < 1.f) {
+        scene_.shotQuality = 0.f;
+        return;
+    }
+    float diff = std::abs(scene_.launchAngleDeg - lastOptAngle_);
+    float q = std::max(0.f, 1.f - diff / 15.f);
+    scene_.shotQuality = std::round(q * q * 100.f);
+}
+
+// -----------------------------------------------------------------------
+// Ball detection — HSV + rim exclusion zone
+// Blacks out the region around the rim so backboard/rim are never detected.
+// Fast, simple, solves the false positive problem directly.
 // -----------------------------------------------------------------------
 
 std::optional<glm::vec2> VisionSystem::detectBall(const cv::Mat& frame) {
@@ -180,6 +247,16 @@ std::optional<glm::vec2> VisionSystem::detectBall(const cv::Mat& frame) {
 
     cv::Mat mask;
     cv::inRange(hsv, ballLowerHSV, ballUpperHSV, mask);
+
+    // Black out region around rim so backboard/rim orange never gets detected
+    if (calib_.rimXpx >= 0) {
+        int rx = (int)calib_.rimXpx;
+        int ry = (int)calib_.rimYpx;
+        cv::rectangle(mask,
+            {rx - 120, ry - 120},
+            {rx + 120, ry + 120},
+            cv::Scalar(0), -1);
+    }
 
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, {5,5});
     cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
@@ -204,7 +281,7 @@ std::optional<glm::vec2> VisionSystem::detectBall(const cv::Mat& frame) {
         if (r < minBallRadius || r > maxBallRadius) continue;
         float score = circ * area;
         if (score > bestScore) {
-            bestScore = score;
+            bestScore  = score;
             bestCenter = {ctr.x, ctr.y};
             scene_.ballRadius = r;
         }
@@ -264,9 +341,9 @@ void VisionSystem::computeWorldCoords() {
     float floorY = std::max(scene_.pose.ankleRight.y, scene_.pose.ankleLeft.y);
     calib_.floorYpx = floorY;
 
-    float shoulderY  = (scene_.pose.shoulderRight.y + scene_.pose.shoulderLeft.y) * 0.5f;
-    float headY      = shoulderY - 0.15f * std::abs(floorY - shoulderY);
-    float heightPx   = floorY - headY;
+    float shoulderY = (scene_.pose.shoulderRight.y + scene_.pose.shoulderLeft.y) * 0.5f;
+    float headY     = shoulderY - 0.15f * std::abs(floorY - shoulderY);
+    float heightPx  = floorY - headY;
 
     if (heightPx > 20.f)
         calib_.metersPerPx = AVG_PERSON_HEIGHT_M / heightPx;
@@ -286,25 +363,23 @@ void VisionSystem::computeWorldCoords() {
 }
 
 // -----------------------------------------------------------------------
-// Detect which direction the person is shooting
+// Detect shot direction
 // -----------------------------------------------------------------------
 
 void VisionSystem::detectShotDirection() {
     if (!calib_.isCalibrated() || !scene_.pose.valid) return;
-
     float personX = (scene_.pose.ankleRight.x + scene_.pose.ankleLeft.x) * 0.5f;
     scene_.shootingRight = (personX < calib_.rimXpx);
 }
 
 // -----------------------------------------------------------------------
-// Estimate launch speed and angle from ball history
+// Estimate launch params from ball history
 // -----------------------------------------------------------------------
 
 void VisionSystem::estimateLaunchParams() {
     if (!calib_.isCalibrated()) return;
     if (ballHistory_.size() < 6) return;
 
-    // Use the most recent segment of ball positions
     int n = std::min((int)ballHistory_.size(), 12);
     auto it = ballHistory_.end() - n;
 
@@ -317,11 +392,9 @@ void VisionSystem::estimateLaunchParams() {
         ts.push_back(i->timeSec);
     }
 
-    // Normalise time
     float t0 = ts.front();
     for (auto& t : ts) t -= t0;
 
-    // Fit linear vx from x positions
     float sumT = 0, sumX = 0, sumTX = 0, sumT2 = 0;
     for (int i = 0; i < n; ++i) {
         sumT  += ts[i]; sumX  += xs[i];
@@ -331,10 +404,8 @@ void VisionSystem::estimateLaunchParams() {
     if (std::abs(denom) < 1e-9f) return;
     float vx = (n * sumTX - sumT * sumX) / denom;
 
-    // Fit quadratic for vy: y = vy0*t - 0.5*g*t^2
-    // Use first and last points
-    float dt  = ts.back() - ts.front();
-    float dy  = ys.back() - ys.front();
+    float dt = ts.back() - ts.front();
+    float dy = ys.back() - ys.front();
     if (dt < 0.02f) return;
     float vy = (dy + 0.5f * 9.81f * dt * dt) / dt;
 
@@ -346,7 +417,7 @@ void VisionSystem::estimateLaunchParams() {
 }
 
 // -----------------------------------------------------------------------
-// Shot state machine — detects in-flight, made, missed
+// Shot state machine
 // -----------------------------------------------------------------------
 
 void VisionSystem::updateShotStateMachine() {
@@ -356,23 +427,28 @@ void VisionSystem::updateShotStateMachine() {
 
     if (!shotInFlight_) {
         if (scene_.pose.valid) {
-            float wristY = std::min(scene_.pose.wristRight.y,
-                                    scene_.pose.wristLeft.y);
-            float shoulderY = (scene_.pose.shoulderRight.y +
-                               scene_.pose.shoulderLeft.y) * 0.5f;
+            float wristY    = std::min(scene_.pose.wristRight.y, scene_.pose.wristLeft.y);
+            float shoulderY = (scene_.pose.shoulderRight.y + scene_.pose.shoulderLeft.y) * 0.5f;
             if (wristY < shoulderY && scene_.ballCenter->y < shoulderY) {
-                shotInFlight_  = true;
-                shotStartTime_ = nowSec();
+                shotInFlight_     = true;
+                shotStartTime_    = nowSec();
+                scene_.shotResult = ShotResult::InFlight;
+                scene_.attemptCount++;
+            }
+        } else {
+            if (scene_.ballCenter->y < calib_.frameH * 0.5f &&
+                nowSec() - lastShotClearTime_ > 2.0f) {
+                shotInFlight_     = true;
+                shotStartTime_    = nowSec();
                 scene_.shotResult = ShotResult::InFlight;
                 scene_.attemptCount++;
             }
         }
     } else {
         float elapsed = nowSec() - shotStartTime_;
-
         if (elapsed > 4.0f) {
-            scene_.shotResult = ShotResult::Missed;
-            shotInFlight_     = false;
+            scene_.shotResult   = ShotResult::Missed;
+            shotInFlight_       = false;
             resultDisplayTimer_ = nowSec();
         } else if (nearRim && !ballWasNearRim_) {
             if (ballPassedThroughRim()) {
@@ -388,11 +464,11 @@ void VisionSystem::updateShotStateMachine() {
 
     ballWasNearRim_ = nearRim;
 
-    // Clear result after 2.5 seconds
     if (!shotInFlight_ &&
         scene_.shotResult != ShotResult::None &&
         nowSec() - resultDisplayTimer_ > 2.5f) {
-        scene_.shotResult = ShotResult::None;
+        scene_.shotResult  = ShotResult::None;
+        lastShotClearTime_ = nowSec();
     }
 }
 
@@ -480,7 +556,107 @@ void VisionSystem::drawOverlay() {
             {20, calib_.frameH - 30},
             cv::FONT_HERSHEY_SIMPLEX, 0.65, {0,100,255}, 2, cv::LINE_AA);
     }
+
+    if (scene_.manualDistM > 0.f) {
+        std::string distLabel;
+        if      (scene_.manualDistM == DIST_LAYUP_M)      distLabel = "[1] Layup  1.5m";
+        else if (scene_.manualDistM == DIST_FREE_THROW_M)  distLabel = "[2] Free Throw  4.6m";
+        else if (scene_.manualDistM == DIST_THREE_PT_M)    distLabel = "[3] Three-Point  6.75m";
+        else distLabel = "Manual " + std::to_string((int)(scene_.manualDistM*10)/10.f) + "m";
+        cv::putText(displayFrame_, distLabel,
+            {calib_.frameW - 280, calib_.frameH - 15},
+            cv::FONT_HERSHEY_SIMPLEX, 0.58, {255, 200, 80}, 2, cv::LINE_AA);
+    } else {
+        cv::putText(displayFrame_, "[AUTO dist]  1/2/3 to override",
+            {calib_.frameW - 310, calib_.frameH - 15},
+            cv::FONT_HERSHEY_SIMPLEX, 0.52, {160, 160, 160}, 1, cv::LINE_AA);
+    }
 }
+
+// -----------------------------------------------------------------------
+// Angle gauge — bottom right
+// -----------------------------------------------------------------------
+
+void VisionSystem::drawAngleGauge() {
+    if (!calib_.isCalibrated() || lastOptAngle_ < 1.f) return;
+
+    int cx = calib_.frameW - 110;
+    int cy = calib_.frameH - 110;
+    int r  = 80;
+
+    cv::Mat overlay = displayFrame_.clone();
+    cv::ellipse(overlay, {cx, cy}, {r, r}, 0, 180, 360, {30,30,30}, -1, cv::LINE_AA);
+    cv::addWeighted(overlay, 0.7, displayFrame_, 0.3, 0, displayFrame_);
+
+    for (int deg = 30; deg <= 70; deg += 5) {
+        float rad = (float)(180 + deg) * PI / 180.f;
+        float x0  = cx + (r - 8) * std::cos(rad);
+        float y0  = cy + (r - 8) * std::sin(rad);
+        float x1  = cx + r       * std::cos(rad);
+        float y1  = cy + r       * std::sin(rad);
+        cv::Scalar col = (deg % 10 == 0) ? cv::Scalar(200,200,200) : cv::Scalar(100,100,100);
+        cv::line(displayFrame_, {(int)x0,(int)y0}, {(int)x1,(int)y1}, col, 1, cv::LINE_AA);
+    }
+
+    {
+        float rad = (float)(180 + lastOptAngle_) * PI / 180.f;
+        float x0 = cx + (r-18)*std::cos(rad); float y0 = cy + (r-18)*std::sin(rad);
+        float x1 = cx + (r- 2)*std::cos(rad); float y1 = cy + (r- 2)*std::sin(rad);
+        cv::line(displayFrame_, {(int)x0,(int)y0}, {(int)x1,(int)y1}, {0,255,80}, 3, cv::LINE_AA);
+    }
+
+    float clampedAngle = std::clamp(scene_.launchAngleDeg, 30.f, 70.f);
+    float diff = std::abs(scene_.launchAngleDeg - lastOptAngle_);
+    cv::Scalar needleCol = (diff < 3.f) ? cv::Scalar(0,255,80) :
+                           (diff < 8.f) ? cv::Scalar(0,200,255) :
+                                          cv::Scalar(0,60,255);
+    {
+        float rad = (float)(180 + clampedAngle) * PI / 180.f;
+        float x1 = cx + (r-5)*std::cos(rad); float y1 = cy + (r-5)*std::sin(rad);
+        cv::line(displayFrame_, {cx,cy}, {(int)x1,(int)y1}, needleCol, 3, cv::LINE_AA);
+        cv::circle(displayFrame_, {cx,cy}, 5, needleCol, -1, cv::LINE_AA);
+    }
+
+    cv::putText(displayFrame_, "30", {cx-r-8, cy+14}, cv::FONT_HERSHEY_SIMPLEX, 0.38, {160,160,160}, 1);
+    cv::putText(displayFrame_, "70", {cx+r-8, cy+14}, cv::FONT_HERSHEY_SIMPLEX, 0.38, {160,160,160}, 1);
+    cv::putText(displayFrame_, std::to_string((int)scene_.launchAngleDeg)+(char)176,
+        {cx-14, cy-10}, cv::FONT_HERSHEY_SIMPLEX, 0.55, needleCol, 2);
+    cv::putText(displayFrame_, "ANGLE", {cx-22, cy+18}, cv::FONT_HERSHEY_SIMPLEX, 0.40, {160,160,160}, 1);
+}
+
+// -----------------------------------------------------------------------
+// Shot quality score — top right
+// -----------------------------------------------------------------------
+
+void VisionSystem::drawShotQuality() {
+    if (!calib_.isCalibrated() || lastOptAngle_ < 1.f) return;
+
+    int score = (int)scene_.shotQuality;
+    cv::Scalar col = (score >= 80) ? cv::Scalar(0,255,80) :
+                     (score >= 50) ? cv::Scalar(0,200,255) :
+                                     cv::Scalar(0,60,255);
+
+    int x = calib_.frameW - 160;
+    int y = 50;
+
+    cv::Mat overlay = displayFrame_.clone();
+    cv::rectangle(overlay, {x-10, y-30}, {x+150, y+55}, {20,20,20}, -1);
+    cv::addWeighted(overlay, 0.6, displayFrame_, 0.4, 0, displayFrame_);
+
+    cv::putText(displayFrame_, "SHOT QUALITY", {x, y},
+        cv::FONT_HERSHEY_SIMPLEX, 0.50, {180,180,180}, 1, cv::LINE_AA);
+    cv::putText(displayFrame_, std::to_string(score) + " / 100", {x, y+35},
+        cv::FONT_HERSHEY_DUPLEX, 0.90, col, 2, cv::LINE_AA);
+
+    int barW = 140, barH = 6, barX = x, barY = y+48;
+    cv::rectangle(displayFrame_, {barX,barY}, {barX+barW, barY+barH}, {60,60,60}, -1);
+    cv::rectangle(displayFrame_, {barX,barY},
+        {barX+(int)(barW*score/100.f), barY+barH}, col, -1);
+}
+
+// -----------------------------------------------------------------------
+// Arc drawing
+// -----------------------------------------------------------------------
 
 void VisionSystem::projectAndDrawArc() {
     if (optimalArcPx_.size() < 2) return;
@@ -507,14 +683,9 @@ void VisionSystem::projectAndDrawArc() {
     }
 }
 
-// -----------------------------------------------------------------------
-// Draw actual ball trajectory vs optimal arc
-// -----------------------------------------------------------------------
-
 void VisionSystem::drawTrajectoryComparison() {
     if (ballHistory_.size() < 3 || !calib_.isCalibrated()) return;
 
-    // Draw actual trail
     for (size_t i = 1; i < ballHistory_.size(); ++i) {
         float alpha = (float)i / ballHistory_.size();
         cv::Scalar col(
@@ -528,7 +699,6 @@ void VisionSystem::drawTrajectoryComparison() {
             col, 2, cv::LINE_AA);
     }
 
-    // Deviation from optimal arc at matching x positions
     if (optimalArcPx_.empty() || !scene_.ballCenter) return;
 
     float ballXpx = scene_.ballCenter->x;
@@ -545,45 +715,32 @@ void VisionSystem::drawTrajectoryComparison() {
             {(int)scene_.ballCenter->x, (int)scene_.ballCenter->y},
             {(int)closestArcPt.x,       (int)closestArcPt.y},
             {0, 80, 255}, 1, cv::LINE_AA);
-
         float deviationM = minDist * calib_.metersPerPx;
-        std::string devStr = "Off by " +
-            std::to_string((int)(deviationM * 100)) + " cm";
-        cv::putText(displayFrame_, devStr,
+        cv::putText(displayFrame_,
+            "Off by " + std::to_string((int)(deviationM * 100)) + " cm",
             {(int)scene_.ballCenter->x + 12, (int)scene_.ballCenter->y - 12},
             cv::FONT_HERSHEY_SIMPLEX, 0.55, {0,180,255}, 2, cv::LINE_AA);
     }
 }
-
-// -----------------------------------------------------------------------
-// Draw MADE / MISSED banner
-// -----------------------------------------------------------------------
 
 void VisionSystem::drawShotResult() {
     if (scene_.shotResult == ShotResult::None ||
         scene_.shotResult == ShotResult::InFlight) return;
 
     bool made = (scene_.shotResult == ShotResult::Made);
-
-    cv::Scalar bgCol  = made ? cv::Scalar(0,180,0)   : cv::Scalar(0,0,200);
-    cv::Scalar txtCol = made ? cv::Scalar(0,255,100)  : cv::Scalar(80,80,255);
+    cv::Scalar bgCol  = made ? cv::Scalar(0,180,0)  : cv::Scalar(0,0,200);
+    cv::Scalar txtCol = made ? cv::Scalar(0,255,100) : cv::Scalar(80,80,255);
     std::string label = made ? "MADE!" : "MISSED";
 
     int cx = calib_.frameW / 2;
     int cy = calib_.frameH / 2 - 40;
 
-    // Semi-transparent background
     cv::Mat overlay = displayFrame_.clone();
     cv::rectangle(overlay, {cx-140, cy-50}, {cx+140, cy+20}, bgCol, -1);
     cv::addWeighted(overlay, 0.55, displayFrame_, 0.45, 0, displayFrame_);
-
     cv::putText(displayFrame_, label, {cx-110, cy+10},
         cv::FONT_HERSHEY_DUPLEX, 1.8, txtCol, 3, cv::LINE_AA);
 }
-
-// -----------------------------------------------------------------------
-// Stats panel (FPS, make%, launch speed, angle, direction)
-// -----------------------------------------------------------------------
 
 void VisionSystem::drawStats() {
     auto put = [&](const std::string& s, int row, cv::Scalar col = {220,220,220}) {
@@ -603,6 +760,8 @@ void VisionSystem::drawStats() {
             y, {255,220,100}); y += 28;
         put("Est. angle : " + std::to_string((int)scene_.launchAngleDeg) + " deg",
             y, {255,220,100}); y += 28;
+        put("Optimal    : " + std::to_string((int)lastOptAngle_) + " deg",
+            y, {100,255,100}); y += 28;
         put("Direction  : " + std::string(scene_.shootingRight ? "Right ->" : "<- Left"),
             y, {200,200,255}); y += 28;
     }
@@ -614,14 +773,10 @@ void VisionSystem::drawStats() {
             "  (" + std::to_string((int)pct) + "%)",
             y, {100,255,255});
     }
-
-    if (scene_.shotResult == ShotResult::InFlight) {
-        put("IN FLIGHT...", calib_.frameH - 30, {0,255,200});
-    }
 }
 
 // -----------------------------------------------------------------------
-// Arc projection (direction-aware)
+// Arc projection
 // -----------------------------------------------------------------------
 
 std::vector<glm::vec2> VisionSystem::projectArcToPixels(
@@ -630,7 +785,7 @@ std::vector<glm::vec2> VisionSystem::projectArcToPixels(
     PhysicsConfig phys;
     auto traj = simulateDrag(v0, thetaDeg, 0.f, h0M, phys, 0.01f, 3.0f);
 
-    float shooterXpx = calib_.rimXpx;
+    float shooterXpx;
     if (scene_.pose.valid) {
         shooterXpx = (scene_.pose.ankleRight.x + scene_.pose.ankleLeft.x) * 0.5f;
     } else {

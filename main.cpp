@@ -38,10 +38,9 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
     if (mouseDown) {
         float xoffset = (float)(xpos - lastX);
-        float yoffset = (float)(lastY - ypos); // reversed since y-coordinates go from bottom to top
+        float yoffset = (float)(lastY - ypos);
         lastX = xpos;
         lastY = ypos;
-
         cam.orbit(xoffset, yoffset);
     }
 }
@@ -64,24 +63,24 @@ static GLFWwindow* initGLFW() {
     glfwWindowHint(GLFW_SAMPLES, 4);
 
     GLFWwindow* window = glfwCreateWindow(
-    WINDOW_WIDTH, WINDOW_HEIGHT,
-    "Basketball 3D Trajectory Visualizer", nullptr, nullptr
+        WINDOW_WIDTH, WINDOW_HEIGHT,
+        "Basketball 3D Trajectory Visualizer", nullptr, nullptr
     );
 
-if (!window) {
-    std::cerr << "GLFW window creation failed\n";
-    glfwTerminate();
-    return nullptr;
-}
+    if (!window) {
+        std::cerr << "GLFW window creation failed\n";
+        glfwTerminate();
+        return nullptr;
+    }
 
-glfwMakeContextCurrent(window);
-glfwSwapInterval(1); // Enable vsync
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1);
 
-glfwSetMouseButtonCallback(window, mouse_button_callback);
-glfwSetCursorPosCallback(window, cursor_position_callback);
-glfwSetScrollCallback(window, scroll_callback);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
+    glfwSetCursorPosCallback(window, cursor_position_callback);
+    glfwSetScrollCallback(window, scroll_callback);
 
-return window;
+    return window;
 }
 
 struct shotState {
@@ -101,9 +100,9 @@ static float optAngle = 0.f;
 
 static float animT = 0.f;
 static bool animating = false;
-static bool animSpeedUp = 0.5f;
+static float animSpeed = 0.5f;
 
-static Physics physics;
+static PhysicsConfig phys;
 
 void Recompute() {
     currentTraj = simulateDrag(shot.v0, shot.theta, shot.phi, shot.h0, phys);
@@ -136,7 +135,7 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
                 needRecompute = true;
                 break;
             case GLFW_KEY_R:
-                shot = ShotState{};
+                shot = shotState{};
                 needRecompute = true;
                 break;
             case GLFW_KEY_UP:
@@ -201,7 +200,7 @@ int main() {
 
     glm::vec3 lightPos = { 3.f, 8.f, 3.f };
 
-    recompute();
+    Recompute();
     renderer.setOptimalArc(optimalTraj);
     renderer.updateTrail(currentTraj, shotQualityVal);
 
@@ -226,7 +225,7 @@ int main() {
         glfwPollEvents();
 
         if (needRecompute) {
-            recompute();
+            Recompute();
             renderer.setOptimalArc(optimalTraj);
             renderer.updateTrail(currentTraj, shotQualityVal);
         }
@@ -286,9 +285,3 @@ int main() {
     glfwTerminate();
     return 0;
 }
-
-
-
-
-
-

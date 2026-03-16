@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\shubs.LAPTOP-8O5R55SM\Documents\3d_Basketball_WSSEF\build\CMakeFiles\299bba164ee031a1e0ad34d6e8d57bf7\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{3513E1E5-7D7D-31D0-A0A7-4CFA826319BA}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
