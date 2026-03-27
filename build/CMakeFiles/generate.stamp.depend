@@ -7,7 +7,6 @@ C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeCXXInformation.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeCommonLanguageInclude.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeCompilerIdDetection.cmake
-C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeDependentOption.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeDetermineCXXCompiler.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeDetermineCompiler.cmake
@@ -17,7 +16,6 @@ C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeDetermineCompilerSupport.cma
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeDetermineRCCompiler.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeDetermineSystem.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake
-C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeGenericSystem.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeInitializeConfigs.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeLanguageInformation.cmake
@@ -33,9 +31,6 @@ C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeTestCCompiler.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeTestCXXCompiler.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeTestCompilerCommon.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/CMakeTestRCCompiler.cmake
-C:/Program Files/CMake/share/cmake-4.2/Modules/CheckCSourceCompiles.cmake
-C:/Program Files/CMake/share/cmake-4.2/Modules/CheckIncludeFile.cmake
-C:/Program Files/CMake/share/cmake-4.2/Modules/CheckLibraryExists.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Compiler/ADSP-DetermineCompiler.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Compiler/ARMCC-DetermineCompiler.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Compiler/ARMClang-DetermineCompiler.cmake
@@ -99,15 +94,12 @@ C:/Program Files/CMake/share/cmake-4.2/Modules/CompilerId/VS-10.vcxproj.in
 C:/Program Files/CMake/share/cmake-4.2/Modules/FindOpenGL.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/FindPackageHandleStandardArgs.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/FindPackageMessage.cmake
-C:/Program Files/CMake/share/cmake-4.2/Modules/FindTIFF.cmake
-C:/Program Files/CMake/share/cmake-4.2/Modules/FindThreads.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Internal/CMakeCLinkerInformation.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Internal/CMakeCXXLinkerInformation.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Internal/CMakeCommonLinkerInformation.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Internal/CMakeDetermineLinkerId.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Internal/CMakeInspectCLinker.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Internal/CMakeInspectCXXLinker.cmake
-C:/Program Files/CMake/share/cmake-4.2/Modules/Internal/CheckSourceCompiles.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Internal/FeatureTesting.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Linker/MSVC-C.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Linker/MSVC-CXX.cmake
@@ -122,60 +114,13 @@ C:/Program Files/CMake/share/cmake-4.2/Modules/Platform/Windows-MSVC-CXX.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Platform/Windows-MSVC.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Platform/Windows.cmake
 C:/Program Files/CMake/share/cmake-4.2/Modules/Platform/WindowsPaths.cmake
-C:/Program Files/CMake/share/cmake-4.2/Modules/SelectLibraryConfigurations.cmake
 C:/Users/shubs.LAPTOP-8O5R55SM/Documents/3d_Basketball_WSSEF/CMakeLists.txt
 C:/Users/shubs.LAPTOP-8O5R55SM/Documents/3d_Basketball_WSSEF/build/CMakeFiles/4.2.3/CMakeCCompiler.cmake
 C:/Users/shubs.LAPTOP-8O5R55SM/Documents/3d_Basketball_WSSEF/build/CMakeFiles/4.2.3/CMakeCXXCompiler.cmake
 C:/Users/shubs.LAPTOP-8O5R55SM/Documents/3d_Basketball_WSSEF/build/CMakeFiles/4.2.3/CMakeRCCompiler.cmake
 C:/Users/shubs.LAPTOP-8O5R55SM/Documents/3d_Basketball_WSSEF/build/CMakeFiles/4.2.3/CMakeSystem.cmake
-C:/vcpkg/installed/x64-windows/share/absl/abslConfig.cmake
-C:/vcpkg/installed/x64-windows/share/absl/abslConfigVersion.cmake
-C:/vcpkg/installed/x64-windows/share/absl/abslTargets-debug.cmake
-C:/vcpkg/installed/x64-windows/share/absl/abslTargets-release.cmake
-C:/vcpkg/installed/x64-windows/share/absl/abslTargets.cmake
-C:/vcpkg/installed/x64-windows/share/flatbuffers/BuildFlatBuffers.cmake
-C:/vcpkg/installed/x64-windows/share/flatbuffers/FlatBuffersTargets-debug.cmake
-C:/vcpkg/installed/x64-windows/share/flatbuffers/FlatBuffersTargets-release.cmake
-C:/vcpkg/installed/x64-windows/share/flatbuffers/FlatBuffersTargets.cmake
-C:/vcpkg/installed/x64-windows/share/flatbuffers/FlatcTargets-release.cmake
-C:/vcpkg/installed/x64-windows/share/flatbuffers/FlatcTargets.cmake
-C:/vcpkg/installed/x64-windows/share/flatbuffers/flatbuffers-config-version.cmake
-C:/vcpkg/installed/x64-windows/share/flatbuffers/flatbuffers-config.cmake
-C:/vcpkg/installed/x64-windows/share/glew/CopyImportedTargetProperties.cmake
-C:/vcpkg/installed/x64-windows/share/glew/glew-config.cmake
-C:/vcpkg/installed/x64-windows/share/glew/glew-targets-debug.cmake
-C:/vcpkg/installed/x64-windows/share/glew/glew-targets-release.cmake
-C:/vcpkg/installed/x64-windows/share/glew/glew-targets.cmake
-C:/vcpkg/installed/x64-windows/share/glew/vcpkg-cmake-wrapper.cmake
-C:/vcpkg/installed/x64-windows/share/glfw3/glfw3Config.cmake
-C:/vcpkg/installed/x64-windows/share/glfw3/glfw3ConfigVersion.cmake
-C:/vcpkg/installed/x64-windows/share/glfw3/glfw3Targets-debug.cmake
-C:/vcpkg/installed/x64-windows/share/glfw3/glfw3Targets-release.cmake
-C:/vcpkg/installed/x64-windows/share/glfw3/glfw3Targets.cmake
-C:/vcpkg/installed/x64-windows/share/glm/glmConfig-debug.cmake
-C:/vcpkg/installed/x64-windows/share/glm/glmConfig-release.cmake
-C:/vcpkg/installed/x64-windows/share/glm/glmConfig.cmake
-C:/vcpkg/installed/x64-windows/share/glm/glmConfigVersion.cmake
-C:/vcpkg/installed/x64-windows/share/opencv4/OpenCVConfig-version.cmake
-C:/vcpkg/installed/x64-windows/share/opencv4/OpenCVConfig.cmake
-C:/vcpkg/installed/x64-windows/share/opencv4/OpenCVModules-debug.cmake
-C:/vcpkg/installed/x64-windows/share/opencv4/OpenCVModules-release.cmake
-C:/vcpkg/installed/x64-windows/share/opencv4/OpenCVModules.cmake
-C:/vcpkg/installed/x64-windows/share/protobuf/protobuf-config-version.cmake
-C:/vcpkg/installed/x64-windows/share/protobuf/protobuf-config.cmake
-C:/vcpkg/installed/x64-windows/share/protobuf/protobuf-generate.cmake
-C:/vcpkg/installed/x64-windows/share/protobuf/protobuf-module.cmake
-C:/vcpkg/installed/x64-windows/share/protobuf/protobuf-options.cmake
-C:/vcpkg/installed/x64-windows/share/protobuf/protobuf-targets-debug.cmake
-C:/vcpkg/installed/x64-windows/share/protobuf/protobuf-targets-release.cmake
-C:/vcpkg/installed/x64-windows/share/protobuf/protobuf-targets.cmake
-C:/vcpkg/installed/x64-windows/share/protobuf/vcpkg-cmake-wrapper.cmake
-C:/vcpkg/installed/x64-windows/share/quirc/quirc-config-debug.cmake
-C:/vcpkg/installed/x64-windows/share/quirc/quirc-config-release.cmake
-C:/vcpkg/installed/x64-windows/share/quirc/quirc-config.cmake
-C:/vcpkg/installed/x64-windows/share/tiff/vcpkg-cmake-wrapper.cmake
-C:/vcpkg/installed/x64-windows/share/utf8_range/utf8_range-config.cmake
-C:/vcpkg/installed/x64-windows/share/utf8_range/utf8_range-targets-debug.cmake
-C:/vcpkg/installed/x64-windows/share/utf8_range/utf8_range-targets-release.cmake
-C:/vcpkg/installed/x64-windows/share/utf8_range/utf8_range-targets.cmake
-C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+C:/libs/opencv/opencv/build/x64/vc16/lib/OpenCVConfig-version.cmake
+C:/libs/opencv/opencv/build/x64/vc16/lib/OpenCVConfig.cmake
+C:/libs/opencv/opencv/build/x64/vc16/lib/OpenCVModules-debug.cmake
+C:/libs/opencv/opencv/build/x64/vc16/lib/OpenCVModules-release.cmake
+C:/libs/opencv/opencv/build/x64/vc16/lib/OpenCVModules.cmake

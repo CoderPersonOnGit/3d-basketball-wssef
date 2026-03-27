@@ -1,5 +1,6 @@
 #include "vision.h"
 #include "physics.h"
+#include "pose_receiver.h"
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
@@ -9,81 +10,26 @@
 #include <algorithm>
 #include <fstream>
 
-#ifndef NO_MEDIAPIPE
-#include "mediapipe/framework/calculator_framework.h"
-#include "mediapipe/framework/formats/image_frame.h"
-#include "mediapipe/framework/formats/image_frame_opencv.h"
-#include "mediapipe/framework/formats/landmark.pb.h"
-#include "mediapipe/framework/port/parse_text_proto.h"
-#endif
-
 static const float PI = 3.14159265f;
-
-static constexpr int MP_RIGHT_SHOULDER = 12;
-static constexpr int MP_LEFT_SHOULDER  = 11;
-static constexpr int MP_RIGHT_WRIST    = 16;
-static constexpr int MP_LEFT_WRIST     = 15;
-static constexpr int MP_RIGHT_ANKLE    = 28;
-static constexpr int MP_LEFT_ANKLE     = 27;
-
-#ifndef NO_MEDIAPIPE
-static const char* POSE_GRAPH = R"(
-input_stream: "input_video"
-output_stream: "pose_landmarks"
-node {
-  calculator: "PoseLandmarkCpu"
-  input_stream: "IMAGE:input_video"
-  output_stream: "LANDMARKS:pose_landmarks"
-  node_options: {
-    [type.googleapis.com/mediapipe.PoseLandmarkCpuOptions] {
-      model_complexity: 0
-    }
-  }
-}
-)";
-struct VisionSystem::MPImpl {
-    mediapipe::CalculatorGraph graph;
-    mediapipe::OutputStreamPoller* poller = nullptr;
-    bool running = false;
-};
-#else
-struct VisionSystem::MPImpl {};
-#endif
 
 // -----------------------------------------------------------------------
 // Construction / destruction
 // -----------------------------------------------------------------------
 
 VisionSystem::VisionSystem() {
-    mp_ = new MPImpl();
-    appStartTime_ = (float)(cv::getTickCount() / cv::getTickFrequency());
+    ballLowerHSV  = cv::Scalar(5,  100, 100);
+    ballUpperHSV  = cv::Scalar(25, 255, 255);
+    minBallRadius = 8.f;
+    maxBallRadius = 35.f;
+    appStartTime_  = (float)(cv::getTickCount() / cv::getTickFrequency());
     prevFrameTime_ = appStartTime_;
-
-#ifndef NO_MEDIAPIPE
-    auto config = mediapipe::ParseTextProtoOrDie<
-        mediapipe::CalculatorGraphConfig>(POSE_GRAPH);
-    mp_->graph.Initialize(config);
-    auto sp = mp_->graph.AddOutputStreamPoller("pose_landmarks");
-    if (sp.ok())
-        mp_->poller = new mediapipe::OutputStreamPoller(std::move(sp.value()));
-    mp_->graph.StartRun({});
-    mp_->running = true;
-    std::cout << "[Vision] MediaPipe enabled.\n";
-#else
-    std::cout << "[Vision] Running without MediaPipe (ball tracking only).\n";
-#endif
+    poseReceiver_.start();
+    std::cout << "[Vision] Running with UDP pose receiver on port 5005.\n";
 }
 
 VisionSystem::~VisionSystem() {
     close();
-#ifndef NO_MEDIAPIPE
-    if (mp_ && mp_->running) {
-        mp_->graph.CloseInputStream("input_video");
-        mp_->graph.WaitUntilDone();
-        delete mp_->poller;
-    }
-#endif
-    delete mp_;
+    poseReceiver_.stop();
 }
 
 // -----------------------------------------------------------------------
@@ -103,8 +49,8 @@ bool VisionSystem::openCamera(int idx) {
 bool VisionSystem::openCamera(const std::string& url) {
     cap_.open(url);
     if (!cap_.isOpened()) { std::cerr << "[Vision] Cannot open: " << url << "\n"; return false; }
-    calib_.frameW = (int)cap_.get(cv::CAP_PROP_FRAME_WIDTH);
-    calib_.frameH = (int)cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
+    calib_.frameW = 1280;
+    calib_.frameH = 720;
     std::cout << "[Vision] Stream opened: " << url << "\n";
     return true;
 }
@@ -124,9 +70,26 @@ bool VisionSystem::processFrame() {
     fps_ = 1.f / std::max(now - prevFrameTime_, 0.001f);
     prevFrameTime_ = now;
 
-    displayFrame_     = rawFrame_.clone();
+    float scaleX = 1280.f / rawFrame_.cols;
+    float scaleY =  720.f / rawFrame_.rows;
+    cv::resize(rawFrame_, displayFrame_, cv::Size(1280, 720));
+
     scene_.ballCenter = detectBall(rawFrame_);
     scene_.pose       = detectPose(rawFrame_);
+
+    // Scale pose and ball coordinates from source resolution to display resolution
+    if (scene_.pose.valid) {
+        scene_.pose.wristRight    *= glm::vec2(scaleX, scaleY);
+        scene_.pose.wristLeft     *= glm::vec2(scaleX, scaleY);
+        scene_.pose.shoulderRight *= glm::vec2(scaleX, scaleY);
+        scene_.pose.shoulderLeft  *= glm::vec2(scaleX, scaleY);
+        scene_.pose.ankleRight    *= glm::vec2(scaleX, scaleY);
+        scene_.pose.ankleLeft     *= glm::vec2(scaleX, scaleY);
+    }
+    if (scene_.ballCenter) {
+        *scene_.ballCenter *= glm::vec2(scaleX, scaleY);
+        scene_.ballRadius  *= (scaleX + scaleY) * 0.5f;
+    }
 
     if (scene_.pose.valid) computeWorldCoords();
     detectShotDirection();
@@ -172,7 +135,7 @@ bool VisionSystem::processFrame() {
 
     updateShotStateMachine();
 
-    // --- FALLBACK DEFAULTS when MediaPipe is unavailable ---
+    // --- FALLBACK DEFAULTS when pose is unavailable ---
     if (!scene_.pose.valid && calib_.isCalibrated()) {
         if (scene_.manualDistM > 0.f) {
             scene_.distToRimM = scene_.manualDistM;
@@ -213,7 +176,6 @@ bool VisionSystem::processFrame() {
     drawOverlay();
     if (calib_.isCalibrated()) projectAndDrawArc();
     drawTrajectoryComparison();
-    // drawShotResult(); // disabled - unreliable without MediaPipe
     drawStats();
     drawAngleGauge();
     drawShotQuality();
@@ -222,7 +184,15 @@ bool VisionSystem::processFrame() {
 }
 
 // -----------------------------------------------------------------------
-// Shot quality score (0-100)
+// Pose detection — reads from UDP receiver
+// -----------------------------------------------------------------------
+
+PoseData VisionSystem::detectPose(const cv::Mat& /*frame*/) {
+    return poseReceiver_.get();
+}
+
+// -----------------------------------------------------------------------
+// Shot quality score
 // -----------------------------------------------------------------------
 
 void VisionSystem::computeShotQuality() {
@@ -236,19 +206,24 @@ void VisionSystem::computeShotQuality() {
 }
 
 // -----------------------------------------------------------------------
-// Ball detection — HSV + rim exclusion zone
-// Blacks out the region around the rim so backboard/rim are never detected.
-// Fast, simple, solves the false positive problem directly.
+// Ball detection
 // -----------------------------------------------------------------------
 
 std::optional<glm::vec2> VisionSystem::detectBall(const cv::Mat& frame) {
+    // Prefer MediaPipe object detection result if available
+    PoseData pd = poseReceiver_.get();
+    if (pd.ballValid && pd.ballRadius > 4.f) {
+        scene_.ballRadius = pd.ballRadius;
+        return pd.ballCenter;
+    }
+
+    // Fallback: HSV color detection
     cv::Mat hsv;
     cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
 
     cv::Mat mask;
     cv::inRange(hsv, ballLowerHSV, ballUpperHSV, mask);
 
-    // Black out region around rim so backboard/rim orange never gets detected
     if (calib_.rimXpx >= 0) {
         int rx = (int)calib_.rimXpx;
         int ry = (int)calib_.rimYpx;
@@ -288,47 +263,6 @@ std::optional<glm::vec2> VisionSystem::detectBall(const cv::Mat& frame) {
     }
 
     return bestScore >= 0 ? std::make_optional(bestCenter) : std::nullopt;
-}
-
-// -----------------------------------------------------------------------
-// Pose detection
-// -----------------------------------------------------------------------
-
-PoseData VisionSystem::detectPose(const cv::Mat& frame) {
-    PoseData pose;
-#ifndef NO_MEDIAPIPE
-    if (!mp_->running || !mp_->poller) return pose;
-
-    auto imgFrame = absl::make_unique<mediapipe::ImageFrame>(
-        mediapipe::ImageFormat::SRGB, frame.cols, frame.rows,
-        mediapipe::ImageFrame::kDefaultAlignmentBoundary);
-    cv::Mat mat = mediapipe::formats::MatView(imgFrame.get());
-    cv::cvtColor(frame, mat, cv::COLOR_BGR2RGB);
-
-    size_t tsUs = (size_t)(nowSec() * 1e6);
-    mp_->graph.AddPacketToInputStream("input_video",
-        mediapipe::Adopt(imgFrame.release()).At(mediapipe::Timestamp(tsUs)));
-
-    mediapipe::Packet pkt;
-    if (!mp_->poller->Next(&pkt)) return pose;
-
-    auto& lms = pkt.Get<mediapipe::NormalizedLandmarkList>();
-    if (lms.landmark_size() < 29) return pose;
-
-    auto lm = [&](int i) -> glm::vec2 {
-        return { lms.landmark(i).x() * frame.cols,
-                 lms.landmark(i).y() * frame.rows };
-    };
-
-    pose.wristRight    = lm(MP_RIGHT_WRIST);
-    pose.wristLeft     = lm(MP_LEFT_WRIST);
-    pose.shoulderRight = lm(MP_RIGHT_SHOULDER);
-    pose.shoulderLeft  = lm(MP_LEFT_SHOULDER);
-    pose.ankleRight    = lm(MP_RIGHT_ANKLE);
-    pose.ankleLeft     = lm(MP_LEFT_ANKLE);
-    pose.valid         = true;
-#endif
-    return pose;
 }
 
 // -----------------------------------------------------------------------
@@ -573,10 +507,6 @@ void VisionSystem::drawOverlay() {
     }
 }
 
-// -----------------------------------------------------------------------
-// Angle gauge — bottom right
-// -----------------------------------------------------------------------
-
 void VisionSystem::drawAngleGauge() {
     if (!calib_.isCalibrated() || lastOptAngle_ < 1.f) return;
 
@@ -624,10 +554,6 @@ void VisionSystem::drawAngleGauge() {
     cv::putText(displayFrame_, "ANGLE", {cx-22, cy+18}, cv::FONT_HERSHEY_SIMPLEX, 0.40, {160,160,160}, 1);
 }
 
-// -----------------------------------------------------------------------
-// Shot quality score — top right
-// -----------------------------------------------------------------------
-
 void VisionSystem::drawShotQuality() {
     if (!calib_.isCalibrated() || lastOptAngle_ < 1.f) return;
 
@@ -653,10 +579,6 @@ void VisionSystem::drawShotQuality() {
     cv::rectangle(displayFrame_, {barX,barY},
         {barX+(int)(barW*score/100.f), barY+barH}, col, -1);
 }
-
-// -----------------------------------------------------------------------
-// Arc drawing
-// -----------------------------------------------------------------------
 
 void VisionSystem::projectAndDrawArc() {
     if (optimalArcPx_.size() < 2) return;
@@ -774,10 +696,6 @@ void VisionSystem::drawStats() {
             y, {100,255,255});
     }
 }
-
-// -----------------------------------------------------------------------
-// Arc projection
-// -----------------------------------------------------------------------
 
 std::vector<glm::vec2> VisionSystem::projectArcToPixels(
     float v0, float thetaDeg, float h0M, float distM, bool shootRight)

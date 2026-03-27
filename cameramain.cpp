@@ -40,16 +40,11 @@ int main(int argc, char** argv) {
 
     if (argc >= 2) {
         std::string arg = argv[1];
-        if (arg.find("http") != std::string::npos ||
-            arg.find("rtsp") != std::string::npos) {
+        try {
+            int idx = std::stoi(arg);
+            opened = vision.openCamera(idx);
+        } catch (...) {
             opened = vision.openCamera(arg);
-        } else {
-            try {
-                int idx = std::stoi(arg);
-                opened = vision.openCamera(idx);
-            } catch (...) {
-                opened = vision.openCamera(arg);
-            }
         }
     } else {
         opened = vision.openCamera(0);
@@ -96,7 +91,7 @@ int main(int argc, char** argv) {
             break;
         }
 
-        // Skip frames for faster playback (change 2 to 3 for 3x speed)
+        // Skip frames for faster playback (change 5 to 1 for normal speed)
         static int frameSkip = 0;
         frameSkip++;
         if (frameSkip % 5 != 0) {
